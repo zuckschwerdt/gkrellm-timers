@@ -35,7 +35,7 @@
 
 #if !defined(WIN32)
 #include <sys/time.h>
-#include <gkrellm/gkrellm.h>
+#include <gkrellm2/gkrellm.h>
 #else
 #include <time.h>
 #include <src/gkrellm.h>

@@ -1,7 +1,7 @@
 # Makefile for a GKrellM Timer plugin
 
 # Linux
-GTK_CONFIG = gtk-config
+GTK_CONFIG = pkg-config gtk+-2.0
 IMLIB_CONFIG = imlib-config
 
 # FreeBSD
@@ -16,12 +16,8 @@ GKRELLM_INCLUDE = -I/usr/local/include
 GTK_INCLUDE = `$(GTK_CONFIG) --cflags`
 GTK_LIB = `$(GTK_CONFIG) --libs`
 
-IMLIB_INCLUDE = `$(IMLIB_CONFIG) --cflags-gdk`
-IMLIB_LIB = `$(IMLIB_CONFIG) --libs-gdk`
-
-
-FLAGS = -g -Wall -fPIC $(GTK_INCLUDE) $(IMLIB_INCLUDE) $(GKRELLM_INCLUDE)
-LIBS = $(GTK_LIB) $(IMLIB_LIB)
+FLAGS = -Wall -fPIC $(GTK_INCLUDE) $(GKRELLM_INCLUDE)
+LIBS = $(GTK_LIB)
 LFLAGS = -shared
 
 CC = gcc $(CFLAGS) $(FLAGS)
