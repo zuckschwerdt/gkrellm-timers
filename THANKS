@@ -1,0 +1,19 @@
+Thanks to:
+==========
+
+ Bill Wilson <billw@wt.net>
+ (always patiently updating me with plugin-api changes,
+  and last but not least he made GKrellM!)
+
+ Eike Bernhardt <teefax@pmnet.uni-oldenburg.de>
+ (Makefile improvements, Testing on FreeBSD)
+
+ Sami Haahtinen <ressu@uusikaupunki.fi>
+ (Features, Testing on Debian)
+
+ Jim Burnes <jvburnes@yahoo.com>
+ (suggested a simpler gui)
+
+ Jan Martinek <honza@dp.fce.vutbr.cz>
+ (suggested mousewheel support)
+

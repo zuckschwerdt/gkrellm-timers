@@ -9,7 +9,7 @@ IMLIB_CONFIG = imlib-config
 #IMLIB_CONFIG = imlib-config
 #PLUGIN_DIR = /usr/X11R6/libexec/gkrellm/plugins/
 
-USER_PLUGIN_DIR = $(HOME)/.gkrellm/plugins
+USER_PLUGIN_DIR = $(HOME)/.gkrellm2/plugins
 PLUGIN_DIR = /usr/lib/gkrellm2/plugins
 GKRELLM_INCLUDE = -I/usr/local/include
 

@@ -1,3 +1,4 @@
+- Easier config and simpler timer set up.
 - test: own style or fall back to the clock style
 - maybe: another position
 - maybe: beep

@@ -1,7 +1,7 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 /* Timer plugin for GKrellM 
-|  Copyright (C) 2001  Christian W. Zuckschwerdt <zany@triq.net>
+|  Copyright (C) 2001-2004  Christian W. Zuckschwerdt <zany@triq.net>
 |
 |  Author:  Christian W. Zuckschwerdt  <zany@triq.net>  http://triq.net/
 |  Latest versions might be found at:  http://gkrellm.net/
@@ -86,11 +86,12 @@ struct Timer
 	gboolean	stopwatch;	/* timer or stopwatch? */
 	gboolean	restart;	/* restart immediately?  */
 	gboolean	popup;		/* raise a popup? */
-	gboolean	active;		/* running? */
-	gboolean	triggered;	/* triggered and no reset so far */
+	gboolean	running;	/* timer is active and running */
+	gboolean	triggered;	/* triggered and not reset so far */
         gchar		*command;
-	time_t		set_time; /* user set time */
-	time_t		cur_time; /* remaining time / time so far */
+	int		set_time;	/* user set time - just h, m and s! */
+	int		lap_time;	/* used to pause the timer */
+	time_t		start_time;	/* to calc remaining time/time so far */
         gboolean	needs_refresh;
 	GkrellmPanel		*panel;
 	GkrellmDecal		*d_clock;
@@ -123,67 +124,54 @@ launch_command(gchar *command)
         g_free(command_line);
         }
 
-static struct tm *
-my_localtime(const time_t *timep)
-    {
-    static struct tm    t_local;
-    struct tm           *t;
-    time_t              t_now;
-
-    time(&t_now);
-
-    /* Call localtime() and copy its buffer to my local static buffer.
-    */
-    if (timep == NULL)
-        t = localtime(&t_now);
-    else
-        t = localtime(timep);
-    t_local = *t;
-
-    /* Restore the localtime() buffer to values expected by
-    |  the clock monitor.
-    */
-    localtime(&t_now);
-
-    return &t_local;
-    }
-
 
 static void
 reset_timer(Timer *timer)
 {
-    struct tm *t;
+    time(&timer->start_time);
+    timer->lap_time = 0;
+
+    timer->needs_refresh = TRUE;
+}
+
+// returns the elapsed / remaining time
+static int
+calc_timer(Timer *timer)
+{
+    time_t              t_now;
+    int			elapsed; // or remaining
+
+    if (timer->running) {
+        time(&t_now);
+    } else {
+        t_now = timer->start_time;
+    }
 
     if (timer->stopwatch)
     {
-        t = my_localtime(NULL);
-        t->tm_hour = 0;
-        t->tm_min = 0;
-        t->tm_sec = 0;
-
-        timer->cur_time = mktime( t );
+        elapsed = t_now - timer->start_time + timer->lap_time;
     }
     else
     {
-        timer->cur_time = timer->set_time;
+	elapsed = timer->set_time - timer->lap_time + timer->start_time - t_now;
     }
-    timer->needs_refresh = TRUE;
+
+    return elapsed;
 }
 
 static void
 timer_popup(Timer *timer)
 {
-    gchar timebuf[32];
     gchar *text;
-    struct tm *t;
+    int hour, min, sec;
 
-    t = my_localtime(&timer->set_time);
+    hour = timer->set_time / 60 / 60;
+    min = timer->set_time / 60 % 60;
+    sec = timer->set_time % 60;
 
-    strftime(timebuf, sizeof(timebuf), "%k:%M:%S", t);
-
-    text = g_strdup_printf("The %s %s set to %s just went off!",
+    text = g_strdup_printf("The %s %s set to %d:%02d:%02d just went off!",
                            timer->stopwatch ? STOPWATCH : NOT_STOPWATCH,
-                           timer->label, timebuf);
+                           timer->label, hour, min, sec);
 
     gkrellm_message_window("Alarm!", text,
                            timer->panel->drawing_area);
@@ -199,7 +187,7 @@ timer_alarm(Timer *timer)
 
     reset_timer(timer);
     if (!timer->restart)
-        timer->active = FALSE;
+        timer->running = FALSE;
 
     if (timer->popup)
         timer_popup(timer);
@@ -233,18 +221,17 @@ new_timer(gint hours, gint mins, gint secs)
 static void
 set_tooltip(Timer *timer)
 {
-    gchar timebuf[32];
     gchar *text;
-    struct tm *t;
+    int hour, min, sec;
 
-    t = my_localtime(&timer->set_time);
+    hour = timer->set_time / 60 / 60;
+    min = timer->set_time / 60 % 60;
+    sec = timer->set_time % 60;
 
-    strftime(timebuf, sizeof(timebuf), "%k:%M:%S", t);
-
-    text = g_strdup_printf("%s: %s %s is set to %s",
-                           timer->active ? ACTIVE : NOT_ACTIVE,
+    text = g_strdup_printf("%s: %s %s is set to %d:%02d:%02d",
+                           timer->running ? ACTIVE : NOT_ACTIVE,
                            timer->stopwatch ? STOPWATCH : NOT_STOPWATCH,
-                           timer->label, timebuf);
+                           timer->label, hour, min, sec);
 
     gtk_tooltips_set_tip(timer->tooltip, timer->panel->drawing_area, text, "");
     gtk_tooltips_enable(timer->tooltip);
@@ -261,40 +248,30 @@ static GkrellmMonitor    *plugin_mon_ref;
 static GkrellmTicks	*pGK;
 
 
-static Timer *
-find_timer(GtkWidget *widget)
-{
-    Timer *timer;
-
-    for (timer = timers; timer ; timer = timer->next)
-        if (timer->panel->drawing_area == widget)
-            return timer;
-    return NULL;
-}
-
-
 static gint
-cb_panel_press(GtkWidget *widget, GdkEventButton *ev)
+cb_panel_press(GtkWidget *widget, GdkEventButton *ev, Timer *timer)
 {
-    Timer *timer;
+    time_t              t_now;
 
-    /* Button 1 toggles the active switch
+    /* Button 1 toggles the running switch
      */
     if (ev->button == 1)
     {
-        timer = find_timer(widget);
-        if (timer)
+        if (timer->triggered)
         {
-            if (timer->triggered)
-            {
-                timer->triggered = FALSE;
-                gkrellm_make_decal_invisible(timer->panel, timer->d_alarm);
+            timer->triggered = FALSE;
+            gkrellm_make_decal_invisible(timer->panel, timer->d_alarm);
+        }
+        else
+        {
+            time(&t_now);
+            if (timer->running) {
+    	        timer->lap_time += t_now - timer->start_time;
             }
-            else
-            {
-                timer->active = !timer->active;
-                set_tooltip(timer);
-            }
+            timer->start_time = t_now;
+            timer->running = !timer->running;
+            timer->needs_refresh = TRUE;
+            set_tooltip(timer);
         }
 
     }
@@ -302,13 +279,10 @@ cb_panel_press(GtkWidget *widget, GdkEventButton *ev)
      */
     if (ev->button == 2)
     {
-        timer = find_timer(widget);
-        if (timer)
-        {
-            reset_timer(timer);
-            timer->triggered = FALSE;
-            gkrellm_make_decal_invisible(timer->panel, timer->d_alarm);
-        }
+        reset_timer(timer);
+        timer->triggered = FALSE;
+        gkrellm_make_decal_invisible(timer->panel, timer->d_alarm);
+        timer->needs_refresh = TRUE;
     }
     /* Button 3 calls up the configuration dialog
      */
@@ -320,37 +294,68 @@ cb_panel_press(GtkWidget *widget, GdkEventButton *ev)
 }       
 
 
+static gint
+cb_panel_scroll(GtkWidget *widget, GdkEventScroll *ev, Timer *timer)
+	{
+	int remaining = calc_timer(timer);
+	
+	if (ev->direction == GDK_SCROLL_UP) {
+		if (remaining >= 60) {
+			timer->set_time += 60;
+    			timer->needs_refresh = TRUE;
+            		set_tooltip(timer);
+		} else if (remaining > 0) {
+			timer->set_time += 5;
+    			timer->needs_refresh = TRUE;
+            		set_tooltip(timer);
+		}
+	}
+	if (ev->direction == GDK_SCROLL_DOWN) {
+		if (remaining > 60) {
+			timer->set_time -= 60;
+    			timer->needs_refresh = TRUE;
+            		set_tooltip(timer);
+		} else if (remaining > 5) {
+			timer->set_time -= 5;
+    			timer->needs_refresh = TRUE;
+            		set_tooltip(timer);
+		}
+	}
+	return FALSE;
+	}
+
+
 static void
 update_plugin(void)
 {
     Timer *timer;
 
-    gchar hm[32], sec[32];
+    gchar hm[32], s[32];
     gint w;
-    struct tm *t;
+    int cur, hour, min, sec;
 
     for (timer = timers; timer ; timer = timer->next)
     {
 
-        if ( timer->needs_refresh || pGK->second_tick )
+        if ( timer->needs_refresh || (timer->running && pGK->second_tick) )
 //(GK.timer_ticks % TICKS_PER_S) == 0 )
         {
-//FIXME:
-            if (timer->active && pGK->second_tick)
-                timer->stopwatch ? timer->cur_time++ : timer->cur_time--;
-            t = my_localtime(&timer->cur_time);
+            cur = calc_timer(timer);
+            hour = cur / 60 / 60;
+            min = cur / 60 % 60;
+            sec = cur % 60;
 
-	    if (t->tm_hour < 10)
-		strftime(hm, sizeof(hm), "-%k:%M", t); /* - 24 hour:minute */
+	    if ((hour < 10) && (!timer->stopwatch))
+		snprintf(hm, sizeof(hm), "-%d:%02d", hour, min); /* - 24 hour:minute */
 	    else
-		strftime(hm, sizeof(hm), "%k:%M", t); /* 24 hour:minute */
+		snprintf(hm, sizeof(hm), "%d:%02d", hour, min); /* 24 hour:minute */
             w = gdk_string_width(timer->d_clock->text_style.font, hm);
             timer->d_clock->x_off = (w < timer->d_clock->w) ? (timer->d_clock->w - w) / 2 : 0;
-            gkrellm_draw_decal_text(timer->panel, timer->d_clock, hm, t->tm_min);
+            gkrellm_draw_decal_text(timer->panel, timer->d_clock, hm, min);
 
-            strftime(sec, sizeof(sec), "%S", t); /* seconds 00-59 */
+            snprintf(s, sizeof(s), "%02d", sec); /* seconds 00-59 */
             gkrellm_draw_decal_text(timer->panel,
-                                    timer->d_seconds, sec, t->tm_sec);
+                                    timer->d_seconds, s, sec);
             gkrellm_draw_decal_pixmap(timer->panel, timer->d_alarm, 0);
 
             //gkrellm_draw_layers(timer->panel);
@@ -358,21 +363,22 @@ update_plugin(void)
             timer->needs_refresh = FALSE;
 
             if (!timer->stopwatch &&
-                (t->tm_hour == 0) && (t->tm_min == 0) && (t->tm_sec == 0) )
+                (hour == 0) && (min == 0) && (sec == 0) )
             {
                 timer->triggered = TRUE;
                 set_tooltip(timer);
                 timer_alarm(timer);
             }
-
-            if (timer->triggered)
-            {
-                if (gkrellm_is_decal_visible(timer->d_alarm) )
-                    gkrellm_make_decal_invisible(timer->panel, timer->d_alarm);
-                else
-                    gkrellm_make_decal_visible(timer->panel, timer->d_alarm);
-            }
         }
+
+        if (timer->triggered && pGK->second_tick)
+        {
+            if (gkrellm_is_decal_visible(timer->d_alarm) )
+                gkrellm_make_decal_invisible(timer->panel, timer->d_alarm);
+            else
+                gkrellm_make_decal_visible(timer->panel, timer->d_alarm);
+        }
+
         if ( pGK->minute_tick )
 	    set_tooltip(timer);
     }
@@ -485,12 +491,16 @@ create_timer(GtkWidget *vbox, Timer *timer, gint first_create)
 			   (GtkSignalFunc) panel_expose_event, NULL);
         gtk_signal_connect(GTK_OBJECT (timer->panel->drawing_area),
                            "button_press_event",
-                           (GtkSignalFunc) cb_panel_press, NULL);
+                           (GtkSignalFunc) cb_panel_press, timer);
+	gtk_signal_connect(GTK_OBJECT(timer->panel->drawing_area),
+			   "scroll_event",
+			   (GtkSignalFunc) cb_panel_scroll, timer);
 
 	timer->tooltip = gtk_tooltips_new();
     }
     gkrellm_make_decal_invisible(timer->panel, timer->d_alarm);
     set_tooltip(timer);
+    timer->needs_refresh = TRUE;
 }
 
 static void
@@ -559,7 +569,7 @@ save_plugin_config(FILE *f)
         label = g_strdelimit(g_strdup(timer->label), STR_DELIMITERS, '_');
         if (label[0] == '\0') label = strdup("_");
 
-        fprintf(f, "%s %ld %d %d %d %s %s\n",
+        fprintf(f, "%s %d %d %d %d %s %s\n",
                 PLUGIN_CONFIG_KEYWORD,
                 timer->set_time,
                 timer->stopwatch,
@@ -582,7 +592,17 @@ load_plugin_config(gchar *arg)
 
     timer = g_new0(Timer, 1); 
 
-    n = sscanf(arg, "%ld %d %d %d %s %[^\n]",
+    timer->set_time = 300;
+    timer->lap_time = 0;
+    timer->start_time = 0;
+    timer->stopwatch = 0;
+    timer->restart = 0;
+    timer->popup = 0;
+    timer->running = 0;
+    label[0] = '?';
+    label[1] = '\0';
+	       
+    n = sscanf(arg, "%d %d %d %d %s %[^\n]",
                &timer->set_time,
                &timer->stopwatch,
                &timer->restart,
@@ -593,12 +613,19 @@ load_plugin_config(gchar *arg)
     gkrellm_dup_string(&timer->label, label);
     g_strdelimit(timer->label, "_", ' ');
 
+    // compat to 1.2
+    if (timer->set_time > 360000) {
+        printf("converting old config, %d", timer->set_time);
+        timer->set_time = (timer->set_time / 60 % 60) * 60 + (timer->set_time % 60);
+        printf(" -> %d, only minutes and seconds copied!\n", timer->set_time);
+    }
+    
     if (n >= 5)
         gkrellm_dup_string(&timer->command, command);
     else
         gkrellm_dup_string(&timer->command, "");
 
-    reset_timer(timer);
+    timer->needs_refresh = TRUE;
 
     if (!timers)
         timers = timer;
@@ -615,12 +642,10 @@ apply_plugin_config(void)
     Timer *timer, *ntimer, *otimers;
     gchar  *name;
     gint   row;
-    struct tm *t;
 
     if (!list_modified)
         return;
 
-    t = my_localtime(NULL);
     otimers = timers;
     timers = NULL;
 
@@ -637,12 +662,11 @@ apply_plugin_config(void)
       gkrellm_dup_string(&ntimer->label, name);
 
       gtk_clist_get_text(GTK_CLIST(timer_clist), row, i++, &name);
-      t->tm_hour = atoi(name);
+      ntimer->set_time = atoi(name) * 60 * 60; // hour
       gtk_clist_get_text(GTK_CLIST(timer_clist), row, i++, &name);
-      t->tm_min = atoi(name);
+      ntimer->set_time += atoi(name) * 60; // min
       gtk_clist_get_text(GTK_CLIST(timer_clist), row, i++, &name);
-      t->tm_sec = atoi(name);
-      ntimer->set_time = mktime( t );
+      ntimer->set_time += atoi(name); // sec
       reset_timer(ntimer);
 
       gtk_clist_get_text(GTK_CLIST(timer_clist), row, i++, &name);
@@ -662,9 +686,11 @@ apply_plugin_config(void)
       {
           if (timer->id == ntimer->id)
           {
-              if (timer->active && timer->cur_time < ntimer->set_time)
-                  ntimer->cur_time = timer->cur_time;
-              ntimer->active = timer->active;
+              if (timer->running && calc_timer(timer) > 0) {
+                  ntimer->lap_time = timer->lap_time;
+                  ntimer->start_time = timer->start_time;
+	      }
+              ntimer->running = timer->running;
           }
       }
 
@@ -844,7 +870,9 @@ cb_start(GtkWidget *widget)
     for (timer = timers; timer ; timer = timer->next)
         if (timer->id == selected_id)
         {
-            timer->active = TRUE;
+            time(&timer->start_time);
+
+            timer->running = TRUE;
             set_tooltip(timer);
         }
 }
@@ -852,14 +880,20 @@ cb_start(GtkWidget *widget)
 static void
 cb_stop(GtkWidget *widget)
 {
-    Timer *timer;
+    Timer	*timer;
+    time_t	t_now;
 
     if (selected_row < 0)
         return;
     for (timer = timers; timer ; timer = timer->next)
         if (timer->id == selected_id)
         {
-            timer->active = FALSE;
+            if (timer->running) {
+            	time(&t_now);
+    	        timer->lap_time += t_now - timer->start_time;
+            }
+
+            timer->running = FALSE;
             set_tooltip(timer);
         }
 }
@@ -910,9 +944,9 @@ static gchar    *plugin_info_text =
 ;
 
 static gchar    *plugin_about_text =
-   "Timer plugin 1.2\n"
+   "Timer plugin 1.3\n"
    "GKrellM Timer Plugin\n\n"
-   "Copyright (C) 2003 Christian W. Zuckschwerdt\n"
+   "Copyright (C) 2001-2004 Christian W. Zuckschwerdt\n"
    "zany@triq.net\n\n"
    "http://triq.net/gkrellm.html\n\n"
    "Released under the GNU Public Licence"
@@ -926,7 +960,7 @@ static void
 create_plugin_tab(GtkWidget *tab_vbox)
 {
     Timer *timer;
-    struct tm *t;
+    int hour, min, sec;
 
     GtkWidget               *tabs;
     GtkWidget               *vbox;
@@ -1078,13 +1112,15 @@ create_plugin_tab(GtkWidget *tab_vbox)
 
         for (timer = timers; timer; timer = timer->next)
         {
-            t = my_localtime( &timer->set_time );
+            hour = timer->set_time / 60 / 60;
+            min = timer->set_time / 60 % 60;
+            sec = timer->set_time % 60;
             i = 0;
             buf[i++] = g_strdup_printf("%d", timer->id);
             buf[i++] = timer->label;
-            buf[i++] = g_strdup_printf("%d", t->tm_hour);
-            buf[i++] = g_strdup_printf("%d", t->tm_min);
-            buf[i++] = g_strdup_printf("%d", t->tm_sec);
+            buf[i++] = g_strdup_printf("%d", hour);
+            buf[i++] = g_strdup_printf("%d", min);
+            buf[i++] = g_strdup_printf("%d", sec);
             buf[i++] = timer->stopwatch ? STOPWATCH : NOT_STOPWATCH;
             buf[i++] = timer->restart ? YES : NO;
             buf[i++] = timer->popup ? YES : NO;

@@ -42,16 +42,21 @@ header files in some other dir, edit GKRELLM_INCLUDE in the Makefile
  
 Bugs:
 =====
+You can suspend your computer and the timers will continue,
+when you shut gkrellm down all timers will be reset though.
+This is not a bug and gkrellms problem not the plugins.
+
 I do consider this version stable.
 please mail any problems/bugs to me...
 
 
 Tested on:
 ==========
-SuSE Linux 7.1, 7.2
+SuSE Linux 7.1 thru 9.2
 Debian SID
 FreeBSD  4.0 Release
 RedHad Linux 6.1
+Gentoo
 
 
 Thanks to:
@@ -66,6 +71,12 @@ Thanks to:
 
  Sami Haahtinen <ressu@uusikaupunki.fi>
  (Features, Testing on Debian)
+
+ Jim Burnes <jvburnes@yahoo.com>
+ (suggested a simpler gui)
+
+ Jan Martinek <honza@dp.fce.vutbr.cz>
+ (suggested mousewheel support)
 
 
 AUTHOR AND WEBPAGE:
