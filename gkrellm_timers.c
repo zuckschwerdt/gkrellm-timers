@@ -32,13 +32,19 @@
 
 #include <stdio.h>
 #include <sys/types.h>
-#include <sys/time.h>
 
+#if !defined(WIN32)
+#include <sys/time.h>
 #include <gkrellm/gkrellm.h>
+#else
+#include <time.h>
+#include <src/gkrellm.h>
+#include <src/win32-plugin.h>
+#endif
 
 #include "bg_meter_alarm.xpm"
 
-#if (VERSION_MAJOR <= 1)&&(VERSION_MINOR < 2)
+#if (GKRELLM_VERSION_MAJOR <= 1)&&(GKRELLM_VERSION_MINOR < 2)
 /* Additional public GKrellM function prototype */
 void create_config_window(void);
 #define gkrellm_open_config_window(monitor) create_config_window()
@@ -61,7 +67,7 @@ void create_config_window(void);
 /* the whole formating stuff is from clock.c */
 typedef struct
 	{
-	TextStyle	ts;
+	GkrellmTextstyle	ts;
 	gint		lbearing,
 			rbearing,
 			width,
@@ -86,10 +92,10 @@ struct Timer
 	time_t		set_time; /* user set time */
 	time_t		cur_time; /* remaining time / time so far */
         gboolean	needs_refresh;
-	Panel		*panel;
-	Decal		*d_clock;
-	Decal		*d_seconds;
-	Decal		*d_alarm;
+	GkrellmPanel		*panel;
+	GkrellmDecal		*d_clock;
+	GkrellmDecal		*d_seconds;
+	GkrellmDecal		*d_alarm;
 	GdkPixmap	*alarm_pixmap;
 	GdkBitmap	*alarm_mask;
 	GtkTooltips	*tooltip;
@@ -251,7 +257,9 @@ set_tooltip(Timer *timer)
 static Timer      *timers;
 static GtkWidget  *main_vbox;
 static gint       style_id;
-static Monitor    *plugin_mon_ref;
+static GkrellmMonitor    *plugin_mon_ref;
+static GkrellmTicks	*pGK;
+
 
 static Timer *
 find_timer(GtkWidget *widget)
@@ -313,7 +321,7 @@ cb_panel_press(GtkWidget *widget, GdkEventButton *ev)
 
 
 static void
-update_plugin()
+update_plugin(void)
 {
     Timer *timer;
 
@@ -324,11 +332,11 @@ update_plugin()
     for (timer = timers; timer ; timer = timer->next)
     {
 
-        if ( timer->needs_refresh || GK.second_tick )
+        if ( timer->needs_refresh || pGK->second_tick )
 //(GK.timer_ticks % TICKS_PER_S) == 0 )
         {
 //FIXME:
-            if (timer->active && GK.second_tick)
+            if (timer->active && pGK->second_tick)
                 timer->stopwatch ? timer->cur_time++ : timer->cur_time--;
             t = my_localtime(&timer->cur_time);
 
@@ -345,7 +353,8 @@ update_plugin()
                                     timer->d_seconds, sec, t->tm_sec);
             gkrellm_draw_decal_pixmap(timer->panel, timer->d_alarm, 0);
 
-            gkrellm_draw_layers(timer->panel);
+            //gkrellm_draw_layers(timer->panel);
+            gkrellm_draw_panel_layers(timer->panel);
             timer->needs_refresh = FALSE;
 
             if (!timer->stopwatch &&
@@ -364,7 +373,7 @@ update_plugin()
                     gkrellm_make_decal_visible(timer->panel, timer->d_alarm);
             }
         }
-        if ( GK.minute_tick )
+        if ( pGK->minute_tick )
 	    set_tooltip(timer);
     }
 
@@ -390,8 +399,9 @@ static void
 create_timer(GtkWidget *vbox, Timer *timer, gint first_create)
 {
     static gint            clock_style_id, local_style_id;
-    Style                  *style;
-    static GdkImlibImage   *bg_meter_alarm_image;
+    GkrellmStyle                  *style;
+//    static GdkImlibImage   *bg_meter_alarm_image;
+    static GkrellmPiximage *bg_meter_alarm_image;
 
     if (first_create)
     {
@@ -435,10 +445,15 @@ create_timer(GtkWidget *vbox, Timer *timer, gint first_create)
 
     /* create the pixmap decal, remove and prepend it
      */
-    gkrellm_load_image("bg_meter_alarm", bg_meter_alarm_xpm,
+//    gkrellm_load_image("bg_meter_alarm", bg_meter_alarm_xpm,
+//                       &bg_meter_alarm_image, STYLE_NAME);
+    gkrellm_load_piximage("bg_meter_alarm", bg_meter_alarm_xpm,
                        &bg_meter_alarm_image, STYLE_NAME);
 
-    gkrellm_render_to_pixmap(bg_meter_alarm_image,
+//    gkrellm_render_to_pixmap(bg_meter_alarm_image,
+//                             &timer->alarm_pixmap, &timer->alarm_mask,
+//                             gkrellm_chart_width(), timer->d_clock->h);
+    gkrellm_scale_piximage_to_pixmap(bg_meter_alarm_image,
                              &timer->alarm_pixmap, &timer->alarm_mask,
                              gkrellm_chart_width(), timer->d_clock->h);
 
@@ -448,19 +463,21 @@ create_timer(GtkWidget *vbox, Timer *timer, gint first_create)
                                                  1, /* depth*/
                                                  style, 0, -1 /*top margin*/);
 
-    timer->panel->decal = g_list_remove(timer->panel->decal, timer->d_alarm);
-    timer->panel->decal = g_list_prepend(timer->panel->decal, timer->d_alarm);
+    timer->panel->decal_list = g_list_remove(timer->panel->decal_list, timer->d_alarm);
+    timer->panel->decal_list = g_list_prepend(timer->panel->decal_list, timer->d_alarm);
 
     /* Configure panel calculates the panel height needed for the decals.
     */
-    gkrellm_configure_panel(timer->panel, NULL, style);
+//    gkrellm_configure_panel(timer->panel, NULL, style);
+    gkrellm_panel_configure( timer->panel, NULL, style );
 
     /* Build the configured panel with a background image and pack it into
     |  the vbox assigned to this monitor.
     */
-    gkrellm_create_panel(vbox, timer->panel, 
-                         gkrellm_bg_meter_image(local_style_id));
-    gkrellm_monitor_height_adjust(timer->panel->h);
+//    gkrellm_create_panel(vbox, timer->panel, 
+//                         gkrellm_bg_meter_image(local_style_id));
+    gkrellm_panel_create( vbox, plugin_mon_ref, timer->panel);
+//    gkrellm_monitor_height_adjust(timer->panel->h);
 
     if (first_create) {
         gtk_signal_connect(GTK_OBJECT (timer->panel->drawing_area),
@@ -484,10 +501,13 @@ destroy_timer(Timer *timer)
 
     g_free(timer->label);
     g_free(timer->command);
-    gdk_imlib_free_pixmap(timer->alarm_pixmap);
+//    gdk_imlib_free_pixmap(timer->alarm_pixmap);
+    gkrellm_free_pixmap(&(timer->alarm_pixmap));
 
-    gkrellm_monitor_height_adjust( - timer->panel->h);
-    gkrellm_destroy_panel(timer->panel);
+//    gkrellm_monitor_height_adjust( - timer->panel->h);
+//    gkrellm_destroy_panel(timer->panel);
+    gkrellm_panel_destroy(timer->panel);
+
     //  gtk_widget_destroy(timer->vbox);
     g_free(timer);
 }
@@ -590,7 +610,7 @@ load_plugin_config(gchar *arg)
 }
 
 static void
-apply_plugin_config()
+apply_plugin_config(void)
 {
     Timer *timer, *ntimer, *otimers;
     gchar  *name;
@@ -779,14 +799,14 @@ cb_enter(GtkWidget *widget)
         selected_id = next_id++;
     i = 0;
     buf[i++] = g_strdup_printf("%d", selected_id);
-    buf[i++] = gkrellm_entry_get_text(&label_entry);
-    buf[i++] = gkrellm_entry_get_text(&hours_spin);
-    buf[i++] = gkrellm_entry_get_text(&mins_spin);
-    buf[i++] = gkrellm_entry_get_text(&secs_spin);
+    buf[i++] = gkrellm_gtk_entry_get_text(&label_entry);
+    buf[i++] = gkrellm_gtk_entry_get_text(&hours_spin);
+    buf[i++] = gkrellm_gtk_entry_get_text(&mins_spin);
+    buf[i++] = gkrellm_gtk_entry_get_text(&secs_spin);
     buf[i++] = GTK_TOGGLE_BUTTON(stopwatch_radio)->active ? STOPWATCH : NOT_STOPWATCH;
     buf[i++] = GTK_TOGGLE_BUTTON(restart_toggle)->active ? YES : NO;
     buf[i++] = GTK_TOGGLE_BUTTON(popup_toggle)->active ? YES : NO;
-    buf[i++] = gkrellm_entry_get_text(&command_entry);
+    buf[i++] = gkrellm_gtk_entry_get_text(&command_entry);
     
     if (selected_row >= 0)
     {
@@ -929,7 +949,8 @@ create_plugin_tab(GtkWidget *tab_vbox)
     gtk_box_pack_start(GTK_BOX(tab_vbox), tabs, TRUE, TRUE, 0);
 
 /* --- Setup tab */
-    vbox = gkrellm_create_tab(tabs, "Setup");
+//    vbox = gkrellm_create_tab(tabs, "Setup");
+    vbox = gkrellm_gtk_framed_notebook_page(tabs, "Setup");
 
     hbox = gtk_hbox_new(FALSE, 0);
     gtk_container_add(GTK_CONTAINER(vbox), hbox);
@@ -1072,16 +1093,19 @@ create_plugin_tab(GtkWidget *tab_vbox)
         }
 
 /* --- Info tab */
-        vbox = gkrellm_create_tab(tabs, "Info");
-        scrolled = gtk_scrolled_window_new(NULL, NULL);
-        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
-                                       GTK_POLICY_AUTOMATIC,
-                                       GTK_POLICY_AUTOMATIC);
-        gtk_box_pack_start(GTK_BOX(vbox), scrolled, TRUE, TRUE, 0);
-        text = gtk_text_new(NULL, NULL);
-        gtk_text_insert(GTK_TEXT(text), NULL, NULL, NULL, plugin_info_text, -1);
-        gtk_text_set_editable(GTK_TEXT(text), FALSE);
-        gtk_container_add(GTK_CONTAINER(scrolled), text);
+        //vbox = gkrellm_create_tab(tabs, "Info");
+        vbox = gkrellm_gtk_framed_notebook_page(tabs, "Info");
+//        scrolled = gtk_scrolled_window_new(NULL, NULL);
+//        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
+//                                       GTK_POLICY_AUTOMATIC,
+//                                       GTK_POLICY_AUTOMATIC);
+//        gtk_box_pack_start(GTK_BOX(vbox), scrolled, TRUE, TRUE, 0);
+//        text = gtk_text_new(NULL, NULL);
+        text = gkrellm_gtk_scrolled_text_view(vbox, NULL, GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+//        gtk_text_insert(GTK_TEXT(text), NULL, NULL, NULL, plugin_info_text, -1);
+        gkrellm_gtk_text_view_append(text, plugin_info_text);
+//        gtk_text_set_editable(GTK_TEXT_VIEW(text), FALSE);
+//        gtk_container_add(GTK_CONTAINER(scrolled), text);
 
 /* --- about text */
 
@@ -1093,7 +1117,7 @@ create_plugin_tab(GtkWidget *tab_vbox)
 }
 
 
-static Monitor  plugin_mon  =
+static GkrellmMonitor  plugin_mon  =
         {
         CONFIG_NAME,           /* Name, for config tab.        */
         0,                     /* Id,  0 if a plugin           */
@@ -1115,9 +1139,21 @@ static Monitor  plugin_mon  =
         NULL                   /* path if a plugin, filled in by GKrellM   */
         };
 
-Monitor *
-init_plugin(void)
+#if defined(WIN32)
+    __declspec(dllexport) GkrellmMonitor *
+    gkrellm_init_plugin(win32_plugin_callbacks* calls)
+#else
+    GkrellmMonitor *
+    gkrellm_init_plugin()
+#endif
 {
+#if defined(WIN32)
+    callbacks = calls;
+    pwin32GK = calls->GK;
+#endif
+
+    pGK = gkrellm_ticks();
+
     timers = NULL;
 
     style_id = gkrellm_add_meter_style(&plugin_mon, STYLE_NAME);
