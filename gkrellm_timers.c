@@ -910,9 +910,9 @@ static gchar    *plugin_info_text =
 ;
 
 static gchar    *plugin_about_text =
-   "Timer plugin 1.0\n"
+   "Timer plugin 1.2\n"
    "GKrellM Timer Plugin\n\n"
-   "Copyright (C) 2001 Christian W. Zuckschwerdt\n"
+   "Copyright (C) 2003 Christian W. Zuckschwerdt\n"
    "zany@triq.net\n\n"
    "http://triq.net/gkrellm.html\n\n"
    "Released under the GNU Public Licence"
