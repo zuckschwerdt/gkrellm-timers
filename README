@@ -1,0 +1,75 @@
+
+gkrellm_timers: GKrellM Timer/Stopwatch Plugin
+Author:    Christian W. Zuckschwerdt <zany@triq.net>
+Homepage:  http://triq.net/gkrellm/
+
+
+A plugin for GKrellM, that let's you define timers and stopwatches.
+
+
+Prerequisites:
+===============
+You do have a recent GKrellM, don't you?
+You also need the header (include) files for building.
+
+
+Compiling:
+===========
+
+* For linux: just run the normal 'make'.
+* For freebsd: run 'make freebsd'.
+
+
+Installing:
+===========
+Running 'make install-user' will place the plugin in your current home
+directory under ~/.gkrellm/plugins.
+Running 'make install' as superuser will place the plugin under
+/usr/share/gkrellm/plugins. You can also manually place the resulting
+gkrellm_timers.so under ~/.gkrellm/plugins. After restarting gkrellm, you
+should be able to enable it in the gkrellm plugins configuration menu.
+
+
+Troubleshooting:
+================
+If you have trouble compiling the plugin. Make sure you have gtk 1.2 and 
+gkrellm >= 1.0.x and you've installed the gkrellm header files in
+/usr/include/gkrellm or /usr/local/include/gkrellm. If you have placed the
+header files in some other dir, edit GKRELLM_INCLUDE in the Makefile
+
+ 
+Bugs:
+=====
+I do consider this version stable.
+please mail any problems/bugs to me...
+
+
+Tested on:
+==========
+SuSE Linux 7.1, 7.2
+Debian SID
+FreeBSD  4.0 Release
+RedHad Linux 6.1
+
+
+Thanks to:
+==========
+
+ Bill Wilson <billw@wt.net>
+ (always patiently updating me with plugin-api changes,
+  and last but not least he made GKrellM!)
+
+ Eike Bernhardt <teefax@pmnet.uni-oldenburg.de>
+ (Makefile improvements, Testing on FreeBSD)
+
+ Sami Haahtinen <ressu@uusikaupunki.fi>
+ (Features, Testing on Debian)
+
+
+AUTHOR AND WEBPAGE:
+===================
+
+Christian W. Zuckschwerdt  <zany@triq.net>
+GKrellM Timer can be found at http://triq.net/gkrellm/
+and also at GKrellM homepage http://web.wt.net/~billw/gkrellm/gkrellm.html
+
