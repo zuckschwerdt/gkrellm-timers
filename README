@@ -9,8 +9,10 @@ A plugin for GKrellM, that let's you define timers and stopwatches.
 
 Prerequisites:
 ===============
-You do have a recent GKrellM, don't you?
+You do have a recent GKrellM-2, don't you?
 You also need the header (include) files for building.
+This release aims at GTK-2.0 users. Please uses the 1.1 release for
+prior GTK versions or the 1.0 release for prior GKrellM versions.
 
 
 Compiling:
@@ -32,8 +34,8 @@ should be able to enable it in the gkrellm plugins configuration menu.
 
 Troubleshooting:
 ================
-If you have trouble compiling the plugin. Make sure you have gtk 1.2 and 
-gkrellm >= 1.0.x and you've installed the gkrellm header files in
+If you have trouble compiling the plugin. Make sure you have gtk 2.0 and 
+gkrellm >= 2.0.x and you've installed the gkrellm header files in
 /usr/include/gkrellm or /usr/local/include/gkrellm. If you have placed the
 header files in some other dir, edit GKRELLM_INCLUDE in the Makefile
 
